@@ -1,26 +1,18 @@
-//! Bevy Game Jam #2 Entry
-//!
-//! Idea is to create a puzzle game where player can pick any two objects to create a tool
-//! that can overcome an obstacle. E.g. combine stick with rock to create a hammer
 //!
 //! Okay... Another idea is to create a tetris-like game where number blocks drop from the sky
 //! and the goal is to get them disappear by combining them using somekind of math
 //!
 //! TODO:
-//!     - Create a system to pick objects
-//!     - Create a two slot inventory
+//!     - Add overlay number for the blocks
+//!     - Implement the collider
+//!     - Find way to sum up complete rows
 //!     - Draw the game art
-//!
-//! Combine Ideas:
-//!     - Stick + Rock = Hammer
-//!     - Flint + Steel = Tinderbox
-//!     - Stick + Steel = Pickaxe
 
 use bevy::prelude::*;
 use bevy::render::camera::ScalingMode;
 use in_game::InGamePlugin;
 use menu::MenuPlugin;
-mod collider;
+mod board;
 mod in_game;
 mod menu;
 
@@ -39,8 +31,14 @@ pub const BLOCK_SIZE: f32 = 64.;
 /// Resource for holding the window size
 pub struct WindowSize(Vec2);
 
+/// Generic Size struct for internal use
+pub struct Size {
+    width: u32,
+    height: u32,
+}
+
 pub mod prelude {
-    pub use super::{GameCamera, GameState, BLOCK_SIZE};
+    pub use super::{in_game::Position, GameCamera, GameState, Size, WindowSize, BLOCK_SIZE};
 }
 
 pub struct LaunchMenu;
@@ -56,17 +54,20 @@ pub enum GameState {
 pub struct GameCamera;
 
 fn main() {
-    let win_size = Vec2::new(WORLD_HEIGHT * ASPECT_RATIO, WORLD_HEIGHT);
+    let win_size = Vec2::new(
+        WORLD_HEIGHT * ASPECT_RATIO * WINDOW_SCALE,
+        WORLD_HEIGHT * WINDOW_SCALE,
+    );
 
     App::new()
         .insert_resource(WindowDescriptor {
             title: "Combine".into(),
-            width: win_size.x * WINDOW_SCALE,
-            height: win_size.y * WINDOW_SCALE,
+            width: win_size.x,
+            height: win_size.y,
             resizable: true,
             ..Default::default()
         })
-        .insert_resource(ClearColor(Color::BLUE))
+        .insert_resource(ClearColor(Color::BLACK))
         .insert_resource(WindowSize(win_size))
         .add_event::<LaunchMenu>()
         .add_state(GameState::Init)
