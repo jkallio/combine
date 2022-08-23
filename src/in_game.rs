@@ -2,20 +2,29 @@ use crate::board::{Board, BoardPlugin, BOARD_SIZE};
 use crate::prelude::*;
 use bevy::prelude::*;
 use bevy::time::Stopwatch;
+use rand::Rng;
 
 const INITIAL_DROP_SPEED: f32 = 1.0;
+const INITIAL_POSITION: BlockPosition = BlockPosition {
+    x: 4,
+    y: BOARD_SIZE.height as i32 - 1,
+};
 
 /// Events
-pub struct SpawnDroppingBlockEvent {
-    drop_speed: f32,
-}
-pub struct SpawnSolidBlockEvent {
-    position: Position,
+pub struct SpawnBlockEvent {
+    is_dropping: bool,
+    number: i32,
+    position: BlockPosition,
+    color: Color,
 }
 
+pub struct GenerateNewBlockEvent;
+
 /// Resources
-pub struct DropTimer(Timer);
-pub struct MoveTimer(Stopwatch);
+struct DropTimer(Timer);
+struct MoveTimer(Stopwatch);
+struct BlockTextStyle(TextStyle);
+struct DropSpeed(pub f32);
 
 /// Components
 #[derive(Component)]
@@ -25,16 +34,17 @@ pub struct DroppingBlock;
 #[derive(Component)]
 pub struct SolidBlock;
 #[derive(Component)]
-pub struct DropSpeed(pub f32);
+pub struct Number(pub i32);
+#[derive(Component)]
+struct BlockColor(Color);
 #[derive(Component, Clone, Copy)]
-pub struct Position {
+pub struct BlockPosition {
     pub x: i32,
     pub y: i32,
 }
-
-impl Position {
-    pub fn new(x: i32, y: i32) -> Position {
-        Position { x, y }
+impl BlockPosition {
+    pub fn new(x: i32, y: i32) -> BlockPosition {
+        BlockPosition { x, y }
     }
 }
 
@@ -53,86 +63,113 @@ impl Plugin for InGamePlugin {
             .add_system_set(
                 SystemSet::on_update(GameState::InGame).with_system(update_block_positions),
             )
-            .add_system_set(
-                SystemSet::on_update(GameState::InGame).with_system(spawn_dropping_block),
-            )
-            .add_system_set(SystemSet::on_update(GameState::InGame).with_system(spawn_solid_block))
-            .add_event::<SpawnDroppingBlockEvent>()
-            .add_event::<SpawnSolidBlockEvent>()
+            .add_system_set(SystemSet::on_update(GameState::InGame).with_system(spawn_block))
+            .add_system_set(SystemSet::on_update(GameState::InGame).with_system(generate_new_block))
+            .add_event::<SpawnBlockEvent>()
+            .add_event::<GenerateNewBlockEvent>()
             .insert_resource(DropTimer(Timer::from_seconds(INITIAL_DROP_SPEED, true)))
-            .insert_resource(MoveTimer(Stopwatch::new()));
+            .insert_resource(MoveTimer(Stopwatch::new()))
+            .insert_resource(DropSpeed(INITIAL_DROP_SPEED));
     }
 }
 
-fn on_enter(mut event_writer: EventWriter<SpawnDroppingBlockEvent>) {
+fn on_enter(
+    mut commands: Commands,
+    mut gen_event: EventWriter<GenerateNewBlockEvent>,
+    asset_server: Res<AssetServer>,
+) {
     println!("Enter GameState::InGame");
-    event_writer.send(SpawnDroppingBlockEvent {
-        drop_speed: INITIAL_DROP_SPEED,
-    });
+
+    let font = asset_server.load("fonts/04b_30.ttf");
+    commands.insert_resource(BlockTextStyle(TextStyle {
+        font,
+        font_size: 32.0,
+        color: Color::BLACK,
+    }));
+
+    gen_event.send(GenerateNewBlockEvent);
 }
 
-fn spawn_solid_block(
-    mut commands: Commands,
-    mut event_reader: EventReader<SpawnSolidBlockEvent>,
-    win_size: Res<WindowSize>,
+fn generate_new_block(
+    mut gen_event: EventReader<GenerateNewBlockEvent>,
+    mut spawn_event: EventWriter<SpawnBlockEvent>,
 ) {
-    for ev in event_reader.iter() {
-        commands
-            .spawn_bundle(SpriteBundle {
-                sprite: Sprite {
-                    color: Color::PINK,
-                    custom_size: Some(Vec2::new(BLOCK_SIZE, BLOCK_SIZE)),
-                    ..Default::default()
-                },
-                transform: Transform::from_xyz(
-                    -win_size.0.x / 2.0 + ev.position.x as f32 * BLOCK_SIZE,
-                    -win_size.0.y / 2.0 + ev.position.y as f32 * BLOCK_SIZE,
-                    1.0,
-                ),
-                ..Default::default()
-            })
-            .insert(SolidBlock)
-            .insert(GameObject)
-            .insert(ev.position);
+    for _ in gen_event.iter() {
+        let num = rand::thread_rng().gen_range(1..10);
+        let col = rand::thread_rng().gen_range(1..5);
+
+        let color = match col {
+            1 => Color::BLUE,
+            2 => Color::YELLOW,
+            3 => Color::PINK,
+            4 => Color::GREEN,
+            _ => {
+                panic!("Invalid color num");
+            }
+        };
+
+        spawn_event.send(SpawnBlockEvent {
+            is_dropping: true,
+            number: num,
+            position: INITIAL_POSITION,
+            color,
+        });
     }
 }
 
-fn spawn_dropping_block(
+fn spawn_block(
     mut commands: Commands,
-    mut event_reader: EventReader<SpawnDroppingBlockEvent>,
-    mut game_state: ResMut<State<GameState>>,
-    board: Res<Board>,
+    mut event_reader: EventReader<SpawnBlockEvent>,
+    win_size: Res<WindowSize>,
+    text_style: Res<BlockTextStyle>,
 ) {
-    let pos = Position::new(5, BOARD_SIZE.height as i32 - 1);
     for ev in event_reader.iter() {
-        if board.is_solid(pos) {
-            println!("GAME OVER!");
-            // TODO: Switch to GameOver screen
-            game_state
-                .set(GameState::Menu)
-                .expect("Failed to set GameState");
+        let transform = if ev.is_dropping {
+            Transform::from_xyz(
+                5.0 * BLOCK_SIZE,
+                (BOARD_SIZE.height as i32 - 1) as f32 * BLOCK_SIZE,
+                1.0,
+            )
         } else {
-            println!("SpawnDroppingBlockEvent received.");
-            board.print();
-        }
-        commands
+            Transform::from_xyz(
+                -win_size.0.x / 2.5 + ev.position.x as f32 * BLOCK_SIZE,
+                -win_size.0.y / 2.0 + ev.position.y as f32 * BLOCK_SIZE,
+                1.0,
+            )
+        };
+
+        let block = commands
             .spawn_bundle(SpriteBundle {
                 sprite: Sprite {
-                    color: Color::WHITE,
+                    color: ev.color,
                     custom_size: Some(Vec2::new(BLOCK_SIZE, BLOCK_SIZE)),
-                    ..Default::default()
+                    ..default()
                 },
-                transform: Transform::from_xyz(
-                    pos.x as f32 * BLOCK_SIZE,
-                    pos.y as f32 * BLOCK_SIZE,
-                    1.0,
-                ),
-                ..Default::default()
+                transform,
+                ..default()
             })
-            .insert(DroppingBlock)
             .insert(GameObject)
-            .insert(DropSpeed(ev.drop_speed))
-            .insert(pos);
+            .insert(ev.position)
+            .insert(Number(ev.number))
+            .insert(BlockColor(ev.color))
+            .id();
+
+        if ev.is_dropping {
+            commands.entity(block).insert(DroppingBlock);
+        } else {
+            commands.entity(block).insert(SolidBlock);
+        }
+
+        let text = commands
+            .spawn_bundle(Text2dBundle {
+                text: Text::from_section(ev.number.to_string(), text_style.0.clone())
+                    .with_alignment(TextAlignment::CENTER),
+                transform: Transform::from_xyz(0.0, 0.0, 10.0),
+                ..default()
+            })
+            .id();
+
+        commands.entity(block).push_children(&[text]);
     }
 }
 
@@ -150,12 +187,13 @@ fn handle_dropping_block_movement(
     input: Res<Input<KeyCode>>,
     mut drop_timer: ResMut<DropTimer>,
     mut time_since_last_moved: ResMut<MoveTimer>,
-    mut query: Query<(Entity, &mut Position, &DropSpeed), With<DroppingBlock>>,
-    mut drop_events: EventWriter<SpawnDroppingBlockEvent>,
-    mut solid_events: EventWriter<SpawnSolidBlockEvent>,
+    mut query: Query<(Entity, &Number, &BlockColor, &mut BlockPosition), With<DroppingBlock>>,
+    mut spawn_event: EventWriter<SpawnBlockEvent>,
+    mut gen_event: EventWriter<GenerateNewBlockEvent>,
     board: Res<Board>,
+    mut drop_speed: ResMut<DropSpeed>,
 ) {
-    for (entity, mut pos, drop_speed) in query.iter_mut() {
+    for (entity, number, color, mut pos) in query.iter_mut() {
         // Handle Left / Right Movement
         // Block should move immediately after releasing the key or in case key is pressed move once
         // per 0.3 seconds.
@@ -163,14 +201,14 @@ fn handle_dropping_block_movement(
         if input.just_pressed(KeyCode::Left)
             || input.pressed(KeyCode::Left) && time_since_last_moved.0.elapsed_secs() > 0.3
         {
-            if board.is_free(Position::new(pos.x - 1, pos.y)) {
+            if board.is_free(BlockPosition::new(pos.x - 1, pos.y)) {
                 pos.x = pos.x - 1;
             }
             time_since_last_moved.0.reset();
         } else if input.just_pressed(KeyCode::Right)
             || input.pressed(KeyCode::Right) && time_since_last_moved.0.elapsed_secs() > 0.3
         {
-            if board.is_free(Position::new(pos.x + 1, pos.y)) {
+            if board.is_free(BlockPosition::new(pos.x + 1, pos.y)) {
                 pos.x = pos.x + 1;
             }
             time_since_last_moved.0.reset();
@@ -181,23 +219,28 @@ fn handle_dropping_block_movement(
         if drop_timer.0.just_finished()
             || (drop_timer.0.elapsed_secs() >= 0.02 && (input.pressed(KeyCode::Down)))
         {
-            if board.is_free(Position::new(pos.x, pos.y - 1)) {
+            if board.is_free(BlockPosition::new(pos.x, pos.y - 1)) {
                 pos.y -= 1;
                 drop_timer.0.reset();
             } else {
-                solid_events.send(SpawnSolidBlockEvent {
-                    position: Position::new(pos.x, pos.y),
+                // Spawn solid block where the dropping block ended
+                spawn_event.send(SpawnBlockEvent {
+                    is_dropping: false,
+                    number: number.0,
+                    position: BlockPosition::new(pos.x, pos.y),
+                    color: color.0,
                 });
 
-                drop_events.send(SpawnDroppingBlockEvent {
-                    drop_speed: drop_speed.0 * 0.99,
-                });
-                println!("Send SpawnDroppingBlockEvent");
-
+                // Despawn dropping block
                 commands.entity(entity).despawn_recursive();
+
+                // Generate new dropping block
+                gen_event.send(GenerateNewBlockEvent);
+
+                drop_speed.0 *= 0.99;
                 drop_timer
                     .0
-                    .set_duration(std::time::Duration::from_secs_f32(drop_speed.0 * 0.99));
+                    .set_duration(std::time::Duration::from_secs_f32(drop_speed.0));
             }
         }
     }
@@ -205,10 +248,10 @@ fn handle_dropping_block_movement(
 
 fn update_block_positions(
     win_size: Res<WindowSize>,
-    mut query: Query<(&Position, &mut Transform)>,
+    mut query: Query<(&BlockPosition, &mut Transform)>,
 ) {
     for (pos, mut transform) in query.iter_mut() {
-        transform.translation.x = -win_size.0.x / 2.0 + pos.x as f32 * BLOCK_SIZE;
+        transform.translation.x = -win_size.0.x / 2.5 + pos.x as f32 * BLOCK_SIZE;
         transform.translation.y = -win_size.0.y / 2.0 + pos.y as f32 * BLOCK_SIZE;
     }
 }

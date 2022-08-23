@@ -17,13 +17,10 @@ mod in_game;
 mod menu;
 
 /// Window aspect ratio
-const ASPECT_RATIO: f32 = 8.0 / 10.0;
+const ASPECT_RATIO: f32 = 8.0 / 12.0;
 
 /// Pixel height of the game world
-const WORLD_HEIGHT: f32 = 240.0;
-
-/// Window scale factor
-const WINDOW_SCALE: f32 = 3.0;
+const WORLD_HEIGHT: f32 = 720.0;
 
 /// Size of the game blocks
 pub const BLOCK_SIZE: f32 = 64.;
@@ -38,7 +35,7 @@ pub struct Size {
 }
 
 pub mod prelude {
-    pub use super::{in_game::Position, GameCamera, GameState, Size, WindowSize, BLOCK_SIZE};
+    pub use super::{in_game::BlockPosition, GameCamera, GameState, Size, WindowSize, BLOCK_SIZE};
 }
 
 pub struct LaunchMenu;
@@ -54,17 +51,14 @@ pub enum GameState {
 pub struct GameCamera;
 
 fn main() {
-    let win_size = Vec2::new(
-        WORLD_HEIGHT * ASPECT_RATIO * WINDOW_SCALE,
-        WORLD_HEIGHT * WINDOW_SCALE,
-    );
+    let win_size = Vec2::new(WORLD_HEIGHT * ASPECT_RATIO, WORLD_HEIGHT);
 
     App::new()
         .insert_resource(WindowDescriptor {
             title: "Combine".into(),
             width: win_size.x,
             height: win_size.y,
-            resizable: true,
+            resizable: false,
             ..Default::default()
         })
         .insert_resource(ClearColor(Color::BLACK))
@@ -84,7 +78,7 @@ pub fn game_setup(mut commands: Commands, mut launch_event: EventWriter<LaunchMe
 
     // No re-scaling on windows resize
     camera.projection.scaling_mode = ScalingMode::None;
-    camera.projection.scale = 600.0;
+    camera.projection.scale = WORLD_HEIGHT / 1.5;
 
     // Fix the aspect ratio
     camera.projection.top = 1.0;

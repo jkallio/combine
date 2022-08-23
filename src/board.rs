@@ -1,39 +1,41 @@
-use crate::prelude::*;
+use crate::{in_game::Number, in_game::SolidBlock, prelude::*};
 use bevy::prelude::*;
 
 pub const BOARD_SIZE: crate::Size = crate::Size {
-    width: 10,
+    width: 7,
     height: 16,
 };
 
 /// Represents the "Tetris" board
 #[derive(Default)]
-pub struct Board([[u8; BOARD_SIZE.width as usize]; BOARD_SIZE.height as usize]);
+pub struct Board([[Option<Entity>; BOARD_SIZE.width as usize]; BOARD_SIZE.height as usize]);
 
 #[allow(dead_code)]
 impl Board {
-    pub fn is_solid(&self, pos: Position) -> bool {
+    pub fn is_occupied(&self, pos: BlockPosition) -> bool {
         pos.x < 0
             || pos.x >= BOARD_SIZE.width as i32
             || pos.y < 0
             || pos.y >= BOARD_SIZE.height as i32
-            || self.0[pos.y as usize][pos.x as usize] > 0
+            || self.0[pos.y as usize][pos.x as usize].is_some()
     }
 
-    pub fn is_free(&self, pos: Position) -> bool {
-        !self.is_solid(pos)
+    pub fn is_free(&self, pos: BlockPosition) -> bool {
+        !self.is_occupied(pos)
     }
 
     pub fn print(&self) {
         for i in 0..BOARD_SIZE.height {
             for j in 0..BOARD_SIZE.width {
-                print!(
-                    "{} ",
-                    self.0[BOARD_SIZE.height as usize - i as usize - 1][j as usize]
-                );
+                if self.0[BOARD_SIZE.height as usize - i as usize - 1][j as usize].is_some() {
+                    print!("X ");
+                } else {
+                    print!(". ");
+                }
             }
             println!("");
         }
+        println!("-------------");
     }
 }
 
@@ -51,15 +53,20 @@ fn on_enter(board: Res<Board>) {
     board.print();
 }
 
-fn on_exit() {}
-
-fn update_board(mut board: ResMut<Board>, query: Query<&Position>) {
+fn on_exit(mut board: ResMut<Board>) {
     for i in 0..BOARD_SIZE.height {
         for j in 0..BOARD_SIZE.width {
-            board.0[i as usize][j as usize] = 0;
+            board.0[i as usize][j as usize] = None;
         }
     }
-    for pos in query.iter() {
-        board.0[pos.y as usize][pos.x as usize] = 1;
+}
+
+fn update_board(
+    mut board: ResMut<Board>,
+    query: Query<(Entity, &BlockPosition, &Number), Added<SolidBlock>>,
+) {
+    for (entity, pos, _) in query.iter() {
+        board.0[pos.y as usize][pos.x as usize] = Some(entity);
+        board.print();
     }
 }
