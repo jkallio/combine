@@ -8,10 +8,12 @@
 //!     - Find way to sum up complete rows
 //!     - Draw the game art
 
+use audio::AudioPlugin;
 use bevy::prelude::*;
 use bevy::render::camera::ScalingMode;
 use in_game::InGamePlugin;
 use menu::MenuPlugin;
+mod audio;
 mod board;
 mod in_game;
 mod menu;
@@ -66,6 +68,7 @@ fn main() {
         .add_event::<LaunchMenu>()
         .add_state(GameState::Init)
         .add_plugins(DefaultPlugins)
+        .add_plugin(AudioPlugin)
         .add_plugin(MenuPlugin)
         .add_plugin(InGamePlugin)
         .add_startup_system(game_setup)

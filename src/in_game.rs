@@ -1,3 +1,4 @@
+use crate::audio::{PlaySfxEvent, Sfx};
 use crate::board::{BlockMap, BoardPlugin, BOARD_SIZE};
 use crate::prelude::*;
 use bevy::prelude::*;
@@ -263,8 +264,9 @@ fn handle_dropping_block_movement(
     >,
     mut spawn_event: EventWriter<SpawnBlockEvent>,
     mut gen_event: EventWriter<GenerateNewBlockEvent>,
-    block_map: Res<BlockMap>,
     mut drop_speed: ResMut<DropSpeed>,
+    block_map: Res<BlockMap>,
+    mut audio_events: EventWriter<PlaySfxEvent>,
 ) {
     for (entity, number, color, mut pos, operation) in query.iter_mut() {
         // Handle Left / Right Movement
@@ -295,6 +297,9 @@ fn handle_dropping_block_movement(
             if block_map.is_none(&BlockPosition::new(pos.x, pos.y - 1)) {
                 pos.y -= 1;
                 drop_timer.0.reset();
+            } else if pos.y >= INITIAL_POSITION.y {
+                println!("GAME OVER!");
+                // TODO: Move to Game Over Screen
             } else {
                 // Spawn solid block where the dropping block ended
                 spawn_event.send(SpawnBlockEvent {
@@ -307,6 +312,7 @@ fn handle_dropping_block_movement(
 
                 // Despawn dropping block
                 commands.entity(entity).despawn_recursive();
+                audio_events.send(PlaySfxEvent(Sfx::BlockDropped));
 
                 // Generate new dropping block
                 gen_event.send(GenerateNewBlockEvent);
@@ -412,6 +418,7 @@ fn update_block_number(
     mut query: Query<(Entity, &mut Number, &BlockPosition)>,
     mut event: EventReader<UpdateBlockNumber>,
     mut block_map: ResMut<BlockMap>,
+    mut audio_events: EventWriter<PlaySfxEvent>,
 ) {
     for ev in event.iter() {
         if let Ok((entity, mut number, pos)) = query.get_mut(ev.entity) {
@@ -419,6 +426,7 @@ fn update_block_number(
             if number.0 == 0 {
                 commands.entity(entity).despawn_recursive();
                 block_map.set_block(pos, None);
+                audio_events.send(PlaySfxEvent(Sfx::BlocksCleared));
             }
         }
     }
