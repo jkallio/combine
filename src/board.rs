@@ -1,25 +1,25 @@
+use crate::constants::prelude::*;
 use crate::in_game::{
-    BlockColor, LastDroppedBlock, Number, Operation, PerformCalculationEvent, SolidBlock,
+    BlockColor, BlockPosition, LastDroppedBlock, Number, PerformCalculationEvent, SolidBlock,
 };
 use crate::prelude::*;
 use bevy::prelude::*;
 use std::collections::HashMap;
 
-pub const BOARD_SIZE: crate::Size = crate::Size {
-    width: 7,
-    height: 16,
-};
-
+/// Type definition for block information
 type BlockInfo = Option<(Entity, BlockColor)>;
 
-pub struct BlockMap(HashMap<BlockPosition, BlockInfo>);
+/// Represents the block map of all the dropped blocks
+pub struct BlockMap(HashMap<Coords, BlockInfo>);
 impl BlockMap {
+    /// Returns new empty `BlockMap`
     pub fn new_empty() -> BlockMap {
-        let block_map = HashMap::<BlockPosition, BlockInfo>::new();
+        let block_map = HashMap::<Coords, BlockInfo>::new();
         BlockMap(block_map)
     }
 
-    pub fn is_none(&self, pos: &BlockPosition) -> bool {
+    /// Retruns `true` if no block found from position
+    pub fn is_none(&self, pos: &Coords) -> bool {
         if (0..BOARD_SIZE.width).contains(&(pos.x as u32))
             && (0..BOARD_SIZE.height).contains(&(pos.y as u32))
         {
@@ -32,33 +32,20 @@ impl BlockMap {
         false
     }
 
-    pub fn get_block(&self, pos: &BlockPosition) -> BlockInfo {
+    /// Return block information from given position
+    pub fn get_block(&self, pos: &Coords) -> BlockInfo {
         if let Some(value) = self.0.get(pos) {
             return value.clone();
         }
         None
     }
 
-    pub fn set_block(&mut self, pos: &BlockPosition, value: BlockInfo) {
+    pub fn set_block(&mut self, pos: &Coords, value: BlockInfo) {
         if value.is_some() {
             self.0.insert(*pos, value);
         } else if self.get_block(pos).is_some() {
             self.0.remove(pos);
         }
-    }
-
-    pub fn print_debug(&self) {
-        for y in (-1..=BOARD_SIZE.height as i32).rev() {
-            for x in -1..=BOARD_SIZE.width as i32 {
-                if self.is_none(&BlockPosition::new(x, y)) {
-                    print!(". ");
-                } else {
-                    print!("# ");
-                }
-            }
-            println!("");
-        }
-        println!("---------------");
     }
 }
 
@@ -74,7 +61,6 @@ impl Plugin for BoardPlugin {
 
 fn on_enter(mut block_map: ResMut<BlockMap>) {
     block_map.0.clear();
-    block_map.print_debug();
 }
 
 fn on_exit(mut block_map: ResMut<BlockMap>) {
@@ -84,16 +70,16 @@ fn on_exit(mut block_map: ResMut<BlockMap>) {
 /// Finds same colored neighbors by calling itself recursively for each found neighbor
 fn find_same_color_neighbors(
     block_map: &BlockMap,
-    pos: &BlockPosition,
+    pos: &Coords,
     color: BlockColor,
     mut neighbors: &mut Vec<Entity>,
 ) {
     // Check same color neighbors from each direction
     let neighbor_positions = [
-        BlockPosition::new(pos.x, pos.y - 1),
-        BlockPosition::new(pos.x - 1, pos.y),
-        BlockPosition::new(pos.x, pos.y + 1),
-        BlockPosition::new(pos.x + 1, pos.y),
+        Coords::new(pos.x, pos.y - 1),
+        Coords::new(pos.x - 1, pos.y),
+        Coords::new(pos.x, pos.y + 1),
+        Coords::new(pos.x + 1, pos.y),
     ];
     for pos in neighbor_positions {
         if let Some(block) = block_map.get_block(&pos) {
@@ -110,32 +96,28 @@ fn find_same_color_neighbors(
 /// Update board whenever new solid block is spawned
 fn update_board(
     mut block_map: ResMut<BlockMap>,
-    mut query: Query<
-        (Entity, &BlockPosition, &BlockColor, &mut Number, &Operation),
-        Added<SolidBlock>,
-    >,
+    mut query: Query<(Entity, &BlockPosition, &BlockColor, &mut Number), Added<SolidBlock>>,
     mut events: EventWriter<PerformCalculationEvent>,
     mut last_dropped_block: ResMut<LastDroppedBlock>,
 ) {
-    for (entity, pos, color, number, operation) in query.iter_mut() {
+    for (entity, pos, color, number) in query.iter_mut() {
         // Find neighbors and send events to perform calculations in them
         let mut neighbors = Vec::<Entity>::new();
-        find_same_color_neighbors(&block_map, &pos, color.clone(), &mut neighbors);
+        find_same_color_neighbors(&block_map, &pos.0, color.clone(), &mut neighbors);
 
         // Send events
         for entity in &neighbors {
             events.send(PerformCalculationEvent {
                 entity: *entity,
                 number: number.0,
-                operation: *operation,
+                operation: last_dropped_block.operation.unwrap(),
             });
         }
 
         // Set last dropped block
-        last_dropped_block.0 = Some(entity);
+        last_dropped_block.entity = Some(entity);
 
         // Add the spawned solid block into the BlockMap
-        block_map.0.insert(*pos, Some((entity, *color)));
-        block_map.print_debug();
+        block_map.0.insert(pos.0, Some((entity, *color)));
     }
 }

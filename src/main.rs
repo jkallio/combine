@@ -1,56 +1,38 @@
 //!
-//! Okay... Another idea is to create a tetris-like game where number blocks drop from the sky
-//! and the goal is to get them disappear by combining them using somekind of math
+//! Simple Tetris style math puzzle game which I made for Bevy Jam #2
+//! License: MIT
+//! Year: 2022
+//! Author: Jussi Kallio
 //!
-//! TODO:
-//!     - Add overlay number for the blocks
-//!     - Implement the collider
-//!     - Find way to sum up complete rows
-//!     - Draw the game art
-
 use audio::AudioPlugin;
 use bevy::prelude::*;
 use bevy::render::camera::ScalingMode;
+use constants::prelude::*;
 use in_game::InGamePlugin;
 use menu::MenuPlugin;
 mod audio;
 mod board;
+mod constants;
 mod in_game;
 mod menu;
-
-/// Window aspect ratio
-const ASPECT_RATIO: f32 = 8.0 / 12.0;
-
-/// Pixel height of the game world
-const WORLD_HEIGHT: f32 = 720.0;
-
-/// Size of the game blocks
-pub const BLOCK_SIZE: f32 = 64.;
 
 /// Resource for holding the window size
 pub struct WindowSize(Vec2);
 
-/// Generic Size struct for internal use
-pub struct Size {
-    width: u32,
-    height: u32,
-}
-
 pub mod prelude {
-    pub use super::{in_game::BlockPosition, GameCamera, GameState, Size, WindowSize, BLOCK_SIZE};
+    pub use super::{GameState, WindowSize};
 }
 
-pub struct LaunchMenu;
+/// Event which launches the Main Menu
+pub struct LaunchMenuEvent;
 
+/// Defines the main state machine states
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 pub enum GameState {
     Init,
     Menu,
     InGame,
 }
-
-#[derive(Component)]
-pub struct GameCamera;
 
 fn main() {
     let win_size = Vec2::new(WORLD_HEIGHT * ASPECT_RATIO, WORLD_HEIGHT);
@@ -63,9 +45,9 @@ fn main() {
             resizable: false,
             ..Default::default()
         })
-        .insert_resource(ClearColor(Color::BLACK))
+        .insert_resource(ClearColor(BACKGROUND_COLOR))
         .insert_resource(WindowSize(win_size))
-        .add_event::<LaunchMenu>()
+        .add_event::<LaunchMenuEvent>()
         .add_state(GameState::Init)
         .add_plugins(DefaultPlugins)
         .add_plugin(AudioPlugin)
@@ -76,7 +58,7 @@ fn main() {
         .run();
 }
 
-pub fn game_setup(mut commands: Commands, mut launch_event: EventWriter<LaunchMenu>) {
+pub fn game_setup(mut commands: Commands, mut launch_event: EventWriter<LaunchMenuEvent>) {
     let mut camera = Camera2dBundle::default();
 
     // No re-scaling on windows resize
@@ -90,14 +72,14 @@ pub fn game_setup(mut commands: Commands, mut launch_event: EventWriter<LaunchMe
     camera.projection.right = 1.0 * ASPECT_RATIO;
 
     // Spawn the camera
-    commands.spawn_bundle(camera).insert(GameCamera);
+    commands.spawn_bundle(camera);
 
-    launch_event.send(LaunchMenu);
+    launch_event.send(LaunchMenuEvent);
 }
 
 fn launch_menu(
     mut game_state: ResMut<State<GameState>>,
-    mut launch_event: EventReader<LaunchMenu>,
+    mut launch_event: EventReader<LaunchMenuEvent>,
 ) {
     for _ in launch_event.iter() {
         game_state
