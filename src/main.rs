@@ -20,7 +20,7 @@ mod menu;
 pub struct WindowSize(Vec2);
 
 pub mod prelude {
-    pub use super::{GameState, WindowSize};
+    pub use super::{GameState, HighScore, Score, WindowSize};
 }
 
 /// Event which launches the Main Menu
@@ -33,6 +33,10 @@ pub enum GameState {
     Menu,
     InGame,
 }
+
+/// Resource for storing the score
+pub struct Score(i32);
+pub struct HighScore(i32);
 
 fn main() {
     let win_size = Vec2::new(WORLD_HEIGHT * ASPECT_RATIO, WORLD_HEIGHT);
@@ -47,6 +51,8 @@ fn main() {
         })
         .insert_resource(ClearColor(BACKGROUND_COLOR))
         .insert_resource(WindowSize(win_size))
+        .insert_resource(Score(0))
+        .insert_resource(HighScore(0))
         .add_event::<LaunchMenuEvent>()
         .add_state(GameState::Init)
         .add_plugins(DefaultPlugins)

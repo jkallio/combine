@@ -42,30 +42,24 @@ fn on_enter(mut commands: Commands, asset_server: Res<AssetServer>) {
         .insert(MenuItems)
         .id();
 
-    let mut text_bundle = TextBundle::from_section(
-        "Press Start",
-        TextStyle {
-            font: asset_server.load("fonts/04b_30.ttf"),
-            font_size: 32.0,
-            color: Color::BLACK,
-        },
-    )
-    .with_text_alignment(TextAlignment::CENTER)
-    .with_style(Style {
-        align_items: AlignItems::Center,
-        align_self: AlignSelf::Center,
-        position_type: PositionType::Relative,
-        ..default()
-    });
-
-    text_bundle.transform = Transform::from_xyz(
-        text_bundle.transform.translation.x,
-        text_bundle.transform.translation.y,
-        100.0,
-    );
-
     let text = commands
-        .spawn_bundle(text_bundle)
+        .spawn_bundle(
+            TextBundle::from_section(
+                "Press Start",
+                TextStyle {
+                    font: asset_server.load("fonts/04b_30.ttf"),
+                    font_size: 32.0,
+                    color: Color::BLACK,
+                },
+            )
+            .with_text_alignment(TextAlignment::CENTER)
+            .with_style(Style {
+                align_items: AlignItems::Center,
+                align_self: AlignSelf::Center,
+                position_type: PositionType::Relative,
+                ..default()
+            }),
+        )
         .insert(PressStartText)
         .id();
 
@@ -100,12 +94,9 @@ fn blink_text(time: Res<Time>, mut query: Query<&mut Text, With<PressStartText>>
         let seconds = time.seconds_since_startup() as f32;
 
         text.sections[0].style.color = Color::Rgba {
-            red: 1.0,
-            green: 1.0,
-            blue: 1.0,
-            //red: (1.25 * seconds).sin() / 2.0 + 0.5,
-            //green: (0.75 * seconds).sin() / 2.0 + 0.5,
-            //blue: (0.50 * seconds).sin() / 2.0 + 0.5,
+            red: (1.25 * seconds).sin() / 2.0 + 0.5,
+            green: (0.75 * seconds).sin() / 2.0 + 0.5,
+            blue: (0.50 * seconds).sin() / 2.0 + 0.5,
             alpha: seconds.sin().abs(),
         };
     }

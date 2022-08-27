@@ -7,7 +7,7 @@ use bevy::time::Stopwatch;
 use rand::Rng;
 
 /// This `Component` defines the math operation which the block performs
-#[derive(Component, Copy, Clone)]
+#[derive(Component, Copy, Clone, Eq, PartialEq)]
 pub enum Operation {
     ADD,
     SUBTRACT,
@@ -77,6 +77,14 @@ pub struct LastDroppedBlock {
     pub entity: Option<Entity>,
     pub operation: Option<Operation>,
 }
+
+/// Identifier for the HUD layer
+#[derive(Component)]
+pub struct HudLayer;
+
+/// Identifier for the ScoreText
+#[derive(Component)]
+pub struct ScoreText;
 
 /// All game objects are tagged with this `Component` for easier clean-up
 #[derive(Component)]
@@ -154,11 +162,15 @@ impl Plugin for InGamePlugin {
             .add_system_set(
                 SystemSet::on_update(GameState::InGame).with_system(update_block_number_text),
             )
+            .add_system_set(SystemSet::on_update(GameState::InGame).with_system(update_score_text))
             .add_system_set(
-                SystemSet::on_update(GameState::InGame).with_system(update_block_operation_text),
+                SystemSet::on_update(GameState::InGame).with_system(update_operator_text),
             )
+            .add_system_set(SystemSet::on_update(GameState::InGame).with_system(update_block_color))
             .add_system_set(SystemSet::on_update(GameState::InGame).with_system(despawn_blocks))
-            .add_system_set(SystemSet::on_update(GameState::InGame).with_system(switch_operation))
+            .add_system_set(
+                SystemSet::on_update(GameState::InGame).with_system(switch_dropping_block_color),
+            )
             .add_event::<SpawnEdgeBlockEvent>()
             .add_event::<SpawnSolidBlockEvent>()
             .add_event::<SpawnDroppingBlockEvent>()
@@ -179,9 +191,11 @@ fn on_enter(
     mut gen_event: EventWriter<RandomizeDroppingBlockEvent>,
     mut block_event: EventWriter<SpawnEdgeBlockEvent>,
     asset_server: Res<AssetServer>,
+    mut score: ResMut<Score>,
 ) {
     println!("Enter GameState::InGame");
 
+    // Initialize the game area (edges)
     for y in -1..=BOARD_SIZE.height as i32 {
         for x in -1..=BOARD_SIZE.width as i32 {
             if y == -1 || y == BOARD_SIZE.height as i32 || x == -1 || x == BOARD_SIZE.width as i32 {
@@ -191,26 +205,73 @@ fn on_enter(
             }
         }
     }
+
+    // Load the assets
     let font = asset_server.load("fonts/04b_30.ttf");
     let block = asset_server.load("pixel-block.png");
     let edge = asset_server.load("edge-block.png");
+
+    // Insert Block Text Style as resoruce
     commands.insert_resource(BlockStyle {
         text_style: TextStyle {
-            font,
+            font: font.clone(),
             font_size: 24.0,
             color: Color::BLACK,
         },
         block,
         edge,
     });
+
+    // Spawn score text
+    let hud = commands
+        .spawn_bundle(NodeBundle {
+            style: Style {
+                size: Size::new(Val::Percent(100.0), Val::Percent(100.0)),
+                position_type: PositionType::Absolute,
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::FlexEnd,
+                ..default()
+            },
+            color: UiColor(Color::NONE),
+            ..default()
+        })
+        .insert(HudLayer)
+        .id();
+
+    let text = commands
+        .spawn_bundle(TextBundle::from_section(
+            "0",
+            TextStyle {
+                font: asset_server.load("fonts/04b_30.ttf"),
+                font_size: 32.0,
+                color: Color::BLACK,
+            },
+        ))
+        .insert(ScoreText)
+        .id();
+
+    commands.entity(hud).push_children(&[text]);
+
+    // Generate the first dropping block
     gen_event.send(RandomizeDroppingBlockEvent);
+
+    // Reset the score resource
+    score.0 = 0;
 }
 
 /// Called once after game has ended
-fn on_exit(mut commands: Commands, query: Query<Entity, With<GameObject>>) {
+fn on_exit(
+    mut commands: Commands,
+    query: Query<Entity, With<GameObject>>,
+    hud_query: Query<Entity, With<HudLayer>>,
+) {
     println!("Exit GameState::InGame");
 
     for entity in query.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+
+    for entity in hud_query.iter() {
         commands.entity(entity).despawn_recursive();
     }
 }
@@ -236,22 +297,32 @@ fn randomize_new_block(
     for _ in gen_event.iter() {
         let num = rand::thread_rng().gen_range(0..=9);
         let col = rand::thread_rng().gen_range(1..=4);
+        let op = rand::thread_rng().gen_range(1..=4);
 
         let color = match col {
             1 => BlockColor::BLUE,
             2 => BlockColor::YELLOW,
             3 => BlockColor::PINK,
-            4 => BlockColor::GREEN,
-            _ => {
-                panic!("Invalid color num");
-            }
+            _ => BlockColor::GREEN,
         };
+
+        let mut operation = match op {
+            1 => Operation::ADD,
+            2 => Operation::SUBTRACT,
+            3 => Operation::MULTIPLY,
+            _ => Operation::DIVIDE,
+        };
+
+        // Prevent division by zero
+        if operation == Operation::DIVIDE && num == 0 {
+            operation = Operation::MULTIPLY;
+        }
 
         spawn_event.send(SpawnDroppingBlockEvent {
             number: num,
             position: INITIAL_POSITION,
             color,
-            operation: Operation::ADD,
+            operation,
         });
     }
 }
@@ -431,7 +502,7 @@ fn handle_dropping_block_movement(
                 // Generate new dropping block
                 gen_event.send(RandomizeDroppingBlockEvent);
 
-                drop_speed.0 *= 0.98;
+                drop_speed.0 *= 0.99;
                 drop_timer
                     .0
                     .set_duration(std::time::Duration::from_secs_f32(drop_speed.0));
@@ -440,40 +511,28 @@ fn handle_dropping_block_movement(
     }
 }
 
-/// System for switching the math operation of the dropping block
-fn switch_operation(
+/// System for switching the color of the dropping block
+fn switch_dropping_block_color(
     input: Res<Input<KeyCode>>,
-    mut query: Query<&mut Operation, With<DroppingBlock>>,
+    mut query: Query<&mut BlockColor, With<DroppingBlock>>,
 ) {
-    if input.just_pressed(KeyCode::LShift) || input.just_pressed(KeyCode::RShift) {
-        for mut op in query.iter_mut() {
-            *op = match *op {
-                Operation::ADD => Operation::SUBTRACT,
-                Operation::SUBTRACT => Operation::MULTIPLY,
-                Operation::MULTIPLY => Operation::DIVIDE,
-                Operation::DIVIDE => Operation::ADD,
+    if let Ok(mut color) = query.get_single_mut() {
+        if input.just_pressed(KeyCode::RShift) || input.just_pressed(KeyCode::LShift) {
+            *color = match *color {
+                BlockColor::BLUE => BlockColor::PINK,
+                BlockColor::PINK => BlockColor::GREEN,
+                BlockColor::GREEN => BlockColor::YELLOW,
+                BlockColor::YELLOW => BlockColor::BLUE,
             }
         }
-    }
-
-    if input.just_pressed(KeyCode::Q) {
-        if let Ok(mut op) = query.get_single_mut() {
-            *op = Operation::ADD;
-        }
-    }
-    if input.just_pressed(KeyCode::W) {
-        if let Ok(mut op) = query.get_single_mut() {
-            *op = Operation::SUBTRACT;
-        }
-    }
-    if input.just_pressed(KeyCode::E) {
-        if let Ok(mut op) = query.get_single_mut() {
-            *op = Operation::MULTIPLY;
-        }
-    }
-    if input.just_pressed(KeyCode::R) {
-        if let Ok(mut op) = query.get_single_mut() {
-            *op = Operation::DIVIDE;
+        if input.just_pressed(KeyCode::Q) {
+            *color = BlockColor::BLUE;
+        } else if input.just_pressed(KeyCode::W) {
+            *color = BlockColor::PINK;
+        } else if input.just_pressed(KeyCode::E) {
+            *color = BlockColor::YELLOW;
+        } else if input.just_pressed(KeyCode::R) {
+            *color = BlockColor::GREEN;
         }
     }
 }
@@ -502,7 +561,8 @@ pub fn perform_calculation(
                         panic!("Divison by zero!");
                     }
                 }
-            };
+            }
+            .clamp(-99, 99);
             update_num_event.send(UpdateBlockNumberEvent {
                 entity: ev.entity,
                 number,
@@ -536,11 +596,12 @@ fn update_block_number(
     mut block_map: ResMut<BlockMap>,
     mut audio_events: EventWriter<PlaySfxEvent>,
     mut despawning_blocks: ResMut<DespawningBlocks>,
+    mut score: ResMut<Score>,
 ) {
     for ev in event.iter() {
         if let Ok((entity, mut number, pos)) = query.get_mut(ev.entity) {
-            number.0 = ev.number;
-            if number.0 == 0 {
+            if ev.number == 0 {
+                score.0 += number.0;
                 despawning_blocks.0.push((
                     entity,
                     Timer::from_seconds(1.0, false),
@@ -549,6 +610,8 @@ fn update_block_number(
 
                 block_map.set_block(&pos.0, None);
                 audio_events.send(PlaySfxEvent(Sfx::BlocksCleared));
+            } else {
+                number.0 = ev.number
             }
         }
     }
@@ -587,11 +650,9 @@ pub fn update_block_number_text(
         }
     }
 }
-
 /// System for updating the math operation character of the dropping block
-/// TODO: Should only be called if operation is changed (and not every frame)
-pub fn update_block_operation_text(
-    mut block_query: Query<(&Number, &Children, &Operation, &DroppingBlock)>,
+pub fn update_operator_text(
+    mut block_query: Query<(&Number, &Children, &Operation, &DroppingBlock), Changed<Operation>>,
     mut child_query: Query<&mut Text>,
 ) {
     for (number, children, operation, _) in block_query.iter_mut() {
@@ -613,5 +674,19 @@ pub fn update_block_operation_text(
                 }
             }
         }
+    }
+}
+
+/// Update the block number color each time BlockColor changes
+pub fn update_block_color(mut query: Query<(&BlockColor, &mut Sprite), Changed<BlockColor>>) {
+    for (block_color, mut sprite) in query.iter_mut() {
+        sprite.color = get_color(*block_color);
+    }
+}
+
+/// Update the score text
+pub fn update_score_text(mut query: Query<&mut Text, With<ScoreText>>, score: Res<Score>) {
+    if let Ok(mut text) = query.get_single_mut() {
+        text.sections[0].value = format!("{}", score.0);
     }
 }
