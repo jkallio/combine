@@ -54,7 +54,9 @@ impl Plugin for BoardPlugin {
     fn build(&self, app: &mut App) {
         app.add_system_set(SystemSet::on_enter(GameState::InGame).with_system(on_enter))
             .add_system_set(SystemSet::on_exit(GameState::InGame).with_system(on_exit))
-            .add_system_set(SystemSet::on_update(GameState::InGame).with_system(update_board))
+            .add_system_set(
+                SystemSet::on_update(GameState::InGame).with_system(handle_block_dropped),
+            )
             .insert_resource(BlockMap::new_empty());
     }
 }
@@ -94,7 +96,7 @@ fn find_same_color_neighbors(
 }
 
 /// Update board whenever new solid block is spawned
-fn update_board(
+fn handle_block_dropped(
     mut block_map: ResMut<BlockMap>,
     mut query: Query<(Entity, &BlockPosition, &BlockColor, &mut Number), Added<SolidBlock>>,
     mut events: EventWriter<PerformCalculationEvent>,
@@ -114,7 +116,7 @@ fn update_board(
             });
         }
 
-        // Set last dropped block
+        // Added Solid block is always also last dropped block
         last_dropped_block.entity = Some(entity);
 
         // Add the spawned solid block into the BlockMap

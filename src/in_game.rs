@@ -35,6 +35,10 @@ pub struct SpawnSolidBlockEvent {
     color: BlockColor,
 }
 
+/// This list contains "despawning" blocks not despawned immediately because of animation.
+#[derive(Default)]
+pub struct DespawningBlocks(Vec<(Entity, Timer, Timer)>);
+
 /// This `Event` is sent when parameters for dropping block needs to be randomized
 pub struct RandomizeDroppingBlockEvent;
 
@@ -153,6 +157,7 @@ impl Plugin for InGamePlugin {
             .add_system_set(
                 SystemSet::on_update(GameState::InGame).with_system(update_block_operation_text),
             )
+            .add_system_set(SystemSet::on_update(GameState::InGame).with_system(despawn_blocks))
             .add_system_set(SystemSet::on_update(GameState::InGame).with_system(switch_operation))
             .add_event::<SpawnEdgeBlockEvent>()
             .add_event::<SpawnSolidBlockEvent>()
@@ -163,7 +168,8 @@ impl Plugin for InGamePlugin {
             .insert_resource(DropTimer(Timer::from_seconds(INITIAL_DROP_SPEED, true)))
             .insert_resource(MoveTimer(Stopwatch::new()))
             .insert_resource(DropSpeed(INITIAL_DROP_SPEED))
-            .insert_resource(LastDroppedBlock::default());
+            .insert_resource(LastDroppedBlock::default())
+            .insert_resource(DespawningBlocks::default());
     }
 }
 
@@ -415,8 +421,7 @@ fn handle_dropping_block_movement(
                     color: color.clone(),
                 });
 
-                // Store the last dropped block information
-                last_dropped_block.entity = Some(entity);
+                // Store the last dropped block operation before it's despawned
                 last_dropped_block.operation = Some(*op);
 
                 // Despawn dropping block
@@ -426,7 +431,7 @@ fn handle_dropping_block_movement(
                 // Generate new dropping block
                 gen_event.send(RandomizeDroppingBlockEvent);
 
-                drop_speed.0 *= 0.99;
+                drop_speed.0 *= 0.98;
                 drop_timer
                     .0
                     .set_duration(std::time::Duration::from_secs_f32(drop_speed.0));
@@ -487,7 +492,16 @@ pub fn perform_calculation(
                 Operation::ADD => number.0 + ev.number,
                 Operation::SUBTRACT => number.0 - ev.number,
                 Operation::MULTIPLY => number.0 * ev.number,
-                Operation::DIVIDE => (number.0 as f32 / ev.number as f32).ceil() as i32,
+                Operation::DIVIDE => {
+                    if ev.number > 0 {
+                        (number.0 as f32 / ev.number as f32).ceil() as i32
+                    } else if ev.number < 0 {
+                        (number.0 as f32 / ev.number as f32).floor() as i32
+                    } else {
+                        // TODO: Division by zero
+                        panic!("Divison by zero!");
+                    }
+                }
             };
             update_num_event.send(UpdateBlockNumberEvent {
                 entity: ev.entity,
@@ -517,20 +531,45 @@ fn update_block_translation(
 
 /// System for handling the number change of a block
 fn update_block_number(
-    mut commands: Commands,
     mut query: Query<(Entity, &mut Number, &BlockPosition)>,
     mut event: EventReader<UpdateBlockNumberEvent>,
     mut block_map: ResMut<BlockMap>,
     mut audio_events: EventWriter<PlaySfxEvent>,
+    mut despawning_blocks: ResMut<DespawningBlocks>,
 ) {
     for ev in event.iter() {
         if let Ok((entity, mut number, pos)) = query.get_mut(ev.entity) {
             number.0 = ev.number;
             if number.0 == 0 {
-                commands.entity(entity).despawn_recursive();
+                despawning_blocks.0.push((
+                    entity,
+                    Timer::from_seconds(1.0, false),
+                    Timer::from_seconds(0.05, false),
+                ));
+
                 block_map.set_block(&pos.0, None);
                 audio_events.send(PlaySfxEvent(Sfx::BlocksCleared));
             }
+        }
+    }
+}
+
+/// Despawn blocks
+fn despawn_blocks(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut despawning_blocks: ResMut<DespawningBlocks>,
+    mut query: Query<(&mut Sprite, &mut Visibility)>,
+) {
+    for block in despawning_blocks.0.iter_mut() {
+        if block.1.tick(time.delta()).just_finished() {
+            commands.entity(block.0).despawn_recursive();
+        } else if block.2.tick(time.delta()).just_finished() {
+            if let Ok((mut sprite, mut visibility)) = query.get_mut(block.0) {
+                visibility.is_visible = if visibility.is_visible { false } else { true };
+                sprite.color = Color::WHITE;
+            }
+            block.2.reset();
         }
     }
 }
