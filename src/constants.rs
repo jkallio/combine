@@ -5,7 +5,7 @@ use bevy::prelude::*;
 pub mod prelude {
     pub use super::{
         BoardSize, Coords, ASPECT_RATIO, BACKGROUND_COLOR, BLOCK_SIZE, BOARD_SIZE,
-        INITIAL_DROP_SPEED, INITIAL_POSITION, WORLD_HEIGHT,
+        INITIAL_DROP_SPEED, INITIAL_POSITION, INITIAL_TRANSFORM, WORLD_HEIGHT,
     };
 }
 
@@ -37,6 +37,9 @@ pub const BOARD_SIZE: BoardSize = BoardSize {
 
 /// Initial block dropping speed (in seconds)
 pub const INITIAL_DROP_SPEED: f32 = 1.0;
+
+/// Initial transform for spawned blocks (Somewhere hidden)
+pub const INITIAL_TRANSFORM: Transform = Transform::from_xyz(0.0, 1000.0, 1.0);
 
 /// Initial dropping block position (in block size)
 pub const INITIAL_POSITION: Coords = Coords {

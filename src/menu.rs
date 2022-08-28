@@ -42,6 +42,7 @@ fn on_enter(mut commands: Commands, asset_server: Res<AssetServer>) {
         .insert(MenuItems)
         .id();
 
+    // Press Start text
     let text = commands
         .spawn_bundle(
             TextBundle::from_section(
@@ -63,7 +64,26 @@ fn on_enter(mut commands: Commands, asset_server: Res<AssetServer>) {
         .insert(PressStartText)
         .id();
 
-    commands.entity(menu).push_children(&[text]);
+    // Logo picture
+    let logo = commands
+        .spawn_bundle(ImageBundle {
+            style: Style {
+                size: Size::new(Val::Px(400.0), Val::Auto),
+                position_type: PositionType::Absolute,
+                position: UiRect {
+                    left: Val::Auto,
+                    right: Val::Auto,
+                    top: Val::Px(150.0),
+                    bottom: Val::Auto,
+                },
+                align_self: AlignSelf::Center,
+                ..default()
+            },
+            image: asset_server.load("logo.png").into(),
+            ..default()
+        })
+        .id();
+    commands.entity(menu).push_children(&[logo, text]);
 }
 
 /// Called once when switching from `GameState::Menu`
@@ -92,12 +112,6 @@ fn start_game_on_enter(
 fn blink_text(time: Res<Time>, mut query: Query<&mut Text, With<PressStartText>>) {
     for mut text in query.iter_mut() {
         let seconds = time.seconds_since_startup() as f32;
-
-        text.sections[0].style.color = Color::Rgba {
-            red: (1.25 * seconds).sin() / 2.0 + 0.5,
-            green: (0.75 * seconds).sin() / 2.0 + 0.5,
-            blue: (0.50 * seconds).sin() / 2.0 + 0.5,
-            alpha: seconds.sin().abs(),
-        };
+        text.sections[0].style.color = Color::rgba(0., 0., 0., seconds.sin().abs());
     }
 }

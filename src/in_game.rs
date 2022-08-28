@@ -1,5 +1,5 @@
 use crate::audio::{PlaySfxEvent, Sfx};
-use crate::board::{BlockMap, BoardPlugin};
+use crate::board::{BlockMap, BoardPlugin, MoveBlockEvent};
 use crate::constants::prelude::*;
 use crate::prelude::*;
 use bevy::prelude::*;
@@ -185,14 +185,15 @@ impl Plugin for InGamePlugin {
             .add_system_set(
                 SystemSet::on_update(GameState::InGame).with_system(switch_dropping_block_color),
             )
-            //.add_system_set(SystemSet::on_update(GameState::InGame).with_system(drop_floating_blocks),)
+            .add_system_set(
+                SystemSet::on_update(GameState::InGame).with_system(drop_floating_blocks),
+            )
             .add_event::<SpawnEdgeBlockEvent>()
             .add_event::<SpawnSolidBlockEvent>()
             .add_event::<SpawnDroppingBlockEvent>()
             .add_event::<RandomizeDroppingBlockEvent>()
             .add_event::<PerformCalculationEvent>()
             .add_event::<UpdateBlockNumberEvent>()
-            .insert_resource(DropTimer(Timer::from_seconds(INITIAL_DROP_SPEED, true)))
             .insert_resource(MoveTimer(Stopwatch::new()))
             .insert_resource(DropSpeed(INITIAL_DROP_SPEED))
             .insert_resource(LastDroppedBlock::default())
@@ -207,6 +208,7 @@ fn on_enter(
     mut block_event: EventWriter<SpawnEdgeBlockEvent>,
     asset_server: Res<AssetServer>,
     mut score: ResMut<Score>,
+    mut drop_speed: ResMut<DropSpeed>,
 ) {
     println!("Enter GameState::InGame");
 
@@ -274,6 +276,10 @@ fn on_enter(
 
     // Reset the score resource
     score.0 = 0;
+
+    // Reset the initial drop speed
+    drop_speed.0 = INITIAL_DROP_SPEED;
+    commands.insert_resource(DropTimer(Timer::from_seconds(INITIAL_DROP_SPEED, true)))
 }
 
 /// Called once after game has ended
@@ -363,7 +369,6 @@ fn spawn_edge_block(
 fn spawn_solid_block(
     mut commands: Commands,
     mut event_reader: EventReader<SpawnSolidBlockEvent>,
-    win_size: Res<WindowSize>,
     block_style: Res<BlockStyle>,
 ) {
     for ev in event_reader.iter() {
@@ -374,11 +379,7 @@ fn spawn_solid_block(
                     ..default()
                 },
                 texture: block_style.block.clone(),
-                transform: Transform::from_xyz(
-                    -win_size.0.x / 2.5 + ev.position.x as f32 * BLOCK_SIZE,
-                    -win_size.0.y / 2.0 + ev.position.y as f32 * BLOCK_SIZE,
-                    1.0,
-                ),
+                transform: INITIAL_TRANSFORM,
                 ..default()
             })
             .insert(GameObject)
@@ -415,11 +416,7 @@ fn spawn_dropping_block(
                     ..default()
                 },
                 texture: block_style.block.clone(),
-                transform: Transform::from_xyz(
-                    5.0 * BLOCK_SIZE,
-                    (BOARD_SIZE.height as i32 - 1) as f32 * BLOCK_SIZE,
-                    1.0,
-                ),
+                transform: INITIAL_TRANSFORM,
                 ..default()
             })
             .insert(GameObject)
@@ -518,6 +515,7 @@ fn handle_dropping_block_movement(
                 // Generate new dropping block
                 gen_event.send(RandomizeDroppingBlockEvent);
 
+                // Speed up a little each time block is droped
                 drop_speed.0 *= 0.99;
                 drop_timer
                     .0
@@ -598,7 +596,7 @@ pub fn perform_calculation(
 /// System for updating the block's actual translation (based on `BlockMap` position)
 fn update_block_translation(
     win_size: Res<WindowSize>,
-    mut query: Query<(&BlockPosition, &mut Transform)>,
+    mut query: Query<(&BlockPosition, &mut Transform), Changed<BlockPosition>>,
 ) {
     for (pos, mut transform) in query.iter_mut() {
         transform.translation.x = -win_size.0.x / 2.5 + pos.0.x as f32 * BLOCK_SIZE;
@@ -617,7 +615,8 @@ fn update_block_number(
 ) {
     for ev in event.iter() {
         if let Ok((entity, mut number, pos)) = query.get_mut(ev.entity) {
-            if ev.number == 0 {
+            // Target reached --> Despawn block
+            if ev.number % 10 == 0 {
                 score.0 += number.0;
                 despawning_blocks.0.insert(
                     entity,
@@ -704,24 +703,26 @@ pub fn update_score_text(mut query: Query<&mut Text, With<ScoreText>>, score: Re
     }
 }
 
-/*
+/// Drop solid block if below square is empty
 pub fn drop_floating_blocks(
-    mut query: Query<(Entity, &BlockColor, &BlockPosition, &mut Transform), With<SolidBlock>>,
-    mut block_map: ResMut<BlockMap>,
+    mut query: Query<&mut BlockPosition, With<SolidBlock>>,
+    block_map: Res<BlockMap>,
     despawning_blocks: Res<DespawningBlocks>,
+    mut event_writer: EventWriter<MoveBlockEvent>,
 ) {
     if despawning_blocks.0.is_empty() {
-        for (entity, color, pos, mut transform) in query.iter_mut() {
+        for mut pos in query.iter_mut() {
             if block_map
                 .get_block(&Coords::new(pos.0.x, pos.0.y - 1))
                 .is_none()
             {
-                block_map.set_block(&Coords::new(pos.0.x, pos.0.y - 1), Some((entity, *color)));
-                block_map.set_block(&Coords::new(pos.0.x, pos.0.y), None);
-                transform.translation.y -= BLOCK_SIZE;
-                block_map.debug_draw();
+                let new_pos = Coords::new(pos.0.x, pos.0.y - 1);
+                event_writer.send(MoveBlockEvent {
+                    old_pos: pos.0,
+                    new_pos,
+                });
+                pos.0 = new_pos;
             }
         }
     }
 }
-*/

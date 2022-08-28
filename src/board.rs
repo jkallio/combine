@@ -9,6 +9,12 @@ use std::collections::HashMap;
 /// Type definition for block information
 type BlockInfo = Option<(Entity, BlockColor)>;
 
+/// This event can be sent for moving a block in a map
+pub struct MoveBlockEvent {
+    pub old_pos: Coords,
+    pub new_pos: Coords,
+}
+
 /// Represents the block map of all the dropped blocks
 pub struct BlockMap(HashMap<Coords, BlockInfo>);
 impl BlockMap {
@@ -73,7 +79,9 @@ impl Plugin for BoardPlugin {
             .add_system_set(
                 SystemSet::on_update(GameState::InGame).with_system(handle_block_dropped),
             )
-            .insert_resource(BlockMap::new_empty());
+            .add_system_set(SystemSet::on_update(GameState::InGame).with_system(handle_moved_block))
+            .insert_resource(BlockMap::new_empty())
+            .add_event::<MoveBlockEvent>();
     }
 }
 
@@ -137,5 +145,24 @@ fn handle_block_dropped(
 
         // Add the spawned solid block into the BlockMap
         block_map.0.insert(pos.0, Some((entity, *color)));
+    }
+}
+
+fn handle_moved_block(
+    mut block_map: ResMut<BlockMap>,
+    mut event_reader: EventReader<MoveBlockEvent>,
+) {
+    for ev in event_reader.iter() {
+        if let Some(block) = block_map.get_block(&ev.old_pos) {
+            block_map.0.remove(&ev.old_pos);
+            if block_map.get_block(&ev.new_pos).is_none() {
+                block_map.0.insert(ev.new_pos, Some(block));
+            } else {
+                println!(
+                    "Error!! Already occupied {}, {}",
+                    ev.new_pos.x, ev.new_pos.y
+                );
+            }
+        }
     }
 }
