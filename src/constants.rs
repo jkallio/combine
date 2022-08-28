@@ -4,7 +4,7 @@
 use bevy::prelude::*;
 pub mod prelude {
     pub use super::{
-        BoardSize, Coords, ASPECT_RATIO, BACKGROUND_COLOR, BLOCK_SIZE, BOARD_SIZE,
+        BoardSize, Coords, ASPECT_RATIO, BACKGROUND_COLOR, BLOCK_SIZE, BOARD_SIZE, HALF_BLOCK,
         INITIAL_DROP_SPEED, INITIAL_POSITION, INITIAL_TRANSFORM, WORLD_HEIGHT,
     };
 }
@@ -48,13 +48,14 @@ pub const INITIAL_POSITION: Coords = Coords {
 };
 
 /// Window aspect ratio
-pub const ASPECT_RATIO: f32 = 8.0 / 12.0;
+pub const ASPECT_RATIO: f32 = 9.0 / 12.0;
 
 /// Pixel height of the game world
 pub const WORLD_HEIGHT: f32 = 720.0;
 
 /// Size of the game blocks
 pub const BLOCK_SIZE: f32 = 64.;
+pub const HALF_BLOCK: f32 = 32.;
 
 /// Background color
 pub const BACKGROUND_COLOR: Color = Color::Rgba {

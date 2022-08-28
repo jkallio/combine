@@ -143,6 +143,15 @@ pub fn get_operator(op: Operation) -> String {
     .to_string()
 }
 
+/// Helper function to get real position
+pub fn get_translation(win_size: &Vec2, pos: &Coords) -> Vec3 {
+    Vec3::new(
+        -win_size.x / 2.0 + pos.x as f32 * BLOCK_SIZE + BLOCK_SIZE + 15.0,
+        -win_size.y / 2.0 + pos.y as f32 * BLOCK_SIZE - HALF_BLOCK + 7.0,
+        1.0,
+    )
+}
+
 /// Bevy `Plugin` for handling the actual gameplay of this game
 pub struct InGamePlugin;
 impl Plugin for InGamePlugin {
@@ -213,9 +222,9 @@ fn on_enter(
     println!("Enter GameState::InGame");
 
     // Initialize the game area (edges)
-    for y in -1..=BOARD_SIZE.height as i32 {
-        for x in -1..=BOARD_SIZE.width as i32 {
-            if y == -1 || y == BOARD_SIZE.height as i32 || x == -1 || x == BOARD_SIZE.width as i32 {
+    for y in -2..=BOARD_SIZE.height as i32 + 1 {
+        for x in -2..=BOARD_SIZE.width as i32 + 1 {
+            if y < 0 || y >= BOARD_SIZE.height as i32 || x < 0 || x >= BOARD_SIZE.width as i32 {
                 let coords = Coords::new(x, y);
                 block_event.send(SpawnEdgeBlockEvent {
                     position: coords.clone(),
@@ -350,11 +359,7 @@ fn spawn_edge_block(
         let entity = commands
             .spawn_bundle(SpriteBundle {
                 texture: block_style.edge.clone(),
-                transform: Transform::from_xyz(
-                    -win_size.0.x / 2.5 + ev.position.x as f32 * BLOCK_SIZE,
-                    -win_size.0.y / 2.0 + ev.position.y as f32 * BLOCK_SIZE,
-                    1.0,
-                ),
+                transform: Transform::from_translation(get_translation(&win_size.0, &ev.position)),
                 ..default()
             })
             .insert(GameObject)
@@ -567,9 +572,9 @@ pub fn perform_calculation(
                 Operation::SUBTRACT => number.0 - ev.number,
                 Operation::MULTIPLY => number.0 * ev.number,
                 Operation::DIVIDE => {
-                    if ev.number > 0 {
+                    if number.0 > 0 {
                         (number.0 as f32 / ev.number as f32).ceil() as i32
-                    } else if ev.number < 0 {
+                    } else if number.0 < 0 {
                         (number.0 as f32 / ev.number as f32).floor() as i32
                     } else {
                         // TODO: Division by zero
@@ -596,11 +601,13 @@ pub fn perform_calculation(
 /// System for updating the block's actual translation (based on `BlockMap` position)
 fn update_block_translation(
     win_size: Res<WindowSize>,
-    mut query: Query<(&BlockPosition, &mut Transform), Changed<BlockPosition>>,
+    mut query: Query<(&BlockPosition, &mut Transform)>, //, Changed<BlockPosition>>,
 ) {
+    // TODO: For some reason block translation would not always update if Changed-filter was being used.
     for (pos, mut transform) in query.iter_mut() {
-        transform.translation.x = -win_size.0.x / 2.5 + pos.0.x as f32 * BLOCK_SIZE;
-        transform.translation.y = -win_size.0.y / 2.0 + pos.0.y as f32 * BLOCK_SIZE;
+        let trans = get_translation(&win_size.0, &pos.0);
+        transform.translation.x = trans.x;
+        transform.translation.y = trans.y;
     }
 }
 
