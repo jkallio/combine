@@ -2,7 +2,6 @@
 name = "combine"
 version = "0.1.0"
 edition = "2021"
-author = "Jussi Kallio"
 description="Simple Tetris-style math puzzle game made for Bevy Jam #2"
 license="MIT"
 

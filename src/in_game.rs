@@ -5,6 +5,7 @@ use crate::prelude::*;
 use bevy::prelude::*;
 use bevy::time::Stopwatch;
 use rand::Rng;
+use std::collections::HashMap;
 
 /// This `Component` defines the math operation which the block performs
 #[derive(Component, Copy, Clone, Eq, PartialEq)]
@@ -37,7 +38,7 @@ pub struct SpawnSolidBlockEvent {
 
 /// This list contains "despawning" blocks not despawned immediately because of animation.
 #[derive(Default)]
-pub struct DespawningBlocks(Vec<(Entity, Timer, Timer)>);
+pub struct DespawningBlocks(HashMap<Entity, (Entity, Timer, Timer)>);
 
 /// This `Event` is sent when parameters for dropping block needs to be randomized
 pub struct RandomizeDroppingBlockEvent;
@@ -109,6 +110,7 @@ pub struct Number(pub i32);
 /// This `Component` holds the block color
 #[derive(Component, PartialEq, Clone, Copy)]
 pub enum BlockColor {
+    NONE,
     BLUE,
     YELLOW,
     PINK,
@@ -122,11 +124,23 @@ pub struct BlockPosition(pub Coords);
 /// Helper function to translate the `BlockColor` enum into actual RGB Color value
 pub fn get_color(block_color: BlockColor) -> Color {
     match block_color {
+        BlockColor::NONE => Color::NONE,
         BlockColor::BLUE => Color::CYAN,
         BlockColor::YELLOW => Color::GOLD,
         BlockColor::PINK => Color::ORANGE_RED,
         BlockColor::GREEN => Color::LIME_GREEN,
     }
+}
+
+/// Helper function to translate `Operation` into string
+pub fn get_operator(op: Operation) -> String {
+    match op {
+        Operation::ADD => "+",
+        Operation::SUBTRACT => "-",
+        Operation::MULTIPLY => "x",
+        Operation::DIVIDE => "/",
+    }
+    .to_string()
 }
 
 /// Bevy `Plugin` for handling the actual gameplay of this game
@@ -171,6 +185,7 @@ impl Plugin for InGamePlugin {
             .add_system_set(
                 SystemSet::on_update(GameState::InGame).with_system(switch_dropping_block_color),
             )
+            //.add_system_set(SystemSet::on_update(GameState::InGame).with_system(drop_floating_blocks),)
             .add_event::<SpawnEdgeBlockEvent>()
             .add_event::<SpawnSolidBlockEvent>()
             .add_event::<SpawnDroppingBlockEvent>()
@@ -199,8 +214,9 @@ fn on_enter(
     for y in -1..=BOARD_SIZE.height as i32 {
         for x in -1..=BOARD_SIZE.width as i32 {
             if y == -1 || y == BOARD_SIZE.height as i32 || x == -1 || x == BOARD_SIZE.width as i32 {
+                let coords = Coords::new(x, y);
                 block_event.send(SpawnEdgeBlockEvent {
-                    position: Coords::new(x, y),
+                    position: coords.clone(),
                 });
             }
         }
@@ -236,6 +252,7 @@ fn on_enter(
             ..default()
         })
         .insert(HudLayer)
+        .insert(GameObject)
         .id();
 
     let text = commands
@@ -260,20 +277,8 @@ fn on_enter(
 }
 
 /// Called once after game has ended
-fn on_exit(
-    mut commands: Commands,
-    query: Query<Entity, With<GameObject>>,
-    hud_query: Query<Entity, With<HudLayer>>,
-) {
+fn on_exit() {
     println!("Exit GameState::InGame");
-
-    for entity in query.iter() {
-        commands.entity(entity).despawn_recursive();
-    }
-
-    for entity in hud_query.iter() {
-        commands.entity(entity).despawn_recursive();
-    }
 }
 
 /// System for returning to Menu in case Esc key is pressed
@@ -283,8 +288,8 @@ pub fn back_to_menu_on_esc(
 ) {
     if input.just_pressed(KeyCode::Escape) && *game_state.current() != GameState::Menu {
         game_state
-            .set(GameState::Menu)
-            .expect("Failed to change GameState::Menu");
+            .set(GameState::GameOver)
+            .expect("Failed to change GameState::GameOver");
         input.reset(KeyCode::Escape);
     }
 }
@@ -333,9 +338,10 @@ fn spawn_edge_block(
     mut event_reader: EventReader<SpawnEdgeBlockEvent>,
     win_size: Res<WindowSize>,
     block_style: Res<BlockStyle>,
+    mut block_map: ResMut<BlockMap>,
 ) {
     for ev in event_reader.iter() {
-        commands
+        let entity = commands
             .spawn_bundle(SpriteBundle {
                 texture: block_style.edge.clone(),
                 transform: Transform::from_xyz(
@@ -346,7 +352,10 @@ fn spawn_edge_block(
                 ..default()
             })
             .insert(GameObject)
-            .insert(EdgeBlock);
+            .insert(EdgeBlock)
+            .id();
+
+        block_map.set_block(&ev.position, Some((entity, BlockColor::NONE)));
     }
 }
 
@@ -423,8 +432,11 @@ fn spawn_dropping_block(
 
         let text = commands
             .spawn_bundle(Text2dBundle {
-                text: Text::from_section(ev.number.to_string(), block_style.text_style.clone())
-                    .with_alignment(TextAlignment::CENTER),
+                text: Text::from_section(
+                    format!("{}{}", get_operator(ev.operation), ev.number),
+                    block_style.text_style.clone(),
+                )
+                .with_alignment(TextAlignment::CENTER),
                 transform: Transform::from_xyz(0.0, 0.0, 10.0),
                 ..default()
             })
@@ -451,6 +463,7 @@ fn handle_dropping_block_movement(
     block_map: Res<BlockMap>,
     mut audio_events: EventWriter<PlaySfxEvent>,
     mut last_dropped_block: ResMut<LastDroppedBlock>,
+    mut game_state: ResMut<State<GameState>>,
 ) {
     for (entity, number, color, mut pos, op) in query.iter_mut() {
         // Handle Left / Right Movement
@@ -483,7 +496,10 @@ fn handle_dropping_block_movement(
                 drop_timer.0.reset();
             } else if pos.0.y >= INITIAL_POSITION.y {
                 println!("GAME OVER!");
-                // TODO: Move to Game Over Screen
+
+                game_state
+                    .set(GameState::GameOver)
+                    .expect("Failed to change GameState::GameOver");
             } else {
                 // Spawn solid block where the dropping block ended
                 spawn_event.send(SpawnSolidBlockEvent {
@@ -519,6 +535,7 @@ fn switch_dropping_block_color(
     if let Ok(mut color) = query.get_single_mut() {
         if input.just_pressed(KeyCode::RShift) || input.just_pressed(KeyCode::LShift) {
             *color = match *color {
+                BlockColor::NONE => BlockColor::NONE,
                 BlockColor::BLUE => BlockColor::PINK,
                 BlockColor::PINK => BlockColor::GREEN,
                 BlockColor::GREEN => BlockColor::YELLOW,
@@ -602,11 +619,14 @@ fn update_block_number(
         if let Ok((entity, mut number, pos)) = query.get_mut(ev.entity) {
             if ev.number == 0 {
                 score.0 += number.0;
-                despawning_blocks.0.push((
+                despawning_blocks.0.insert(
                     entity,
-                    Timer::from_seconds(1.0, false),
-                    Timer::from_seconds(0.05, false),
-                ));
+                    (
+                        entity,
+                        Timer::from_seconds(1.0, false),
+                        Timer::from_seconds(0.05, false),
+                    ),
+                );
 
                 block_map.set_block(&pos.0, None);
                 audio_events.send(PlaySfxEvent(Sfx::BlocksCleared));
@@ -624,9 +644,11 @@ fn despawn_blocks(
     mut despawning_blocks: ResMut<DespawningBlocks>,
     mut query: Query<(&mut Sprite, &mut Visibility)>,
 ) {
-    for block in despawning_blocks.0.iter_mut() {
+    let mut removals = vec![];
+    for block in despawning_blocks.0.values_mut() {
         if block.1.tick(time.delta()).just_finished() {
             commands.entity(block.0).despawn_recursive();
+            removals.push(block.0);
         } else if block.2.tick(time.delta()).just_finished() {
             if let Ok((mut sprite, mut visibility)) = query.get_mut(block.0) {
                 visibility.is_visible = if visibility.is_visible { false } else { true };
@@ -635,14 +657,18 @@ fn despawn_blocks(
             block.2.reset();
         }
     }
+
+    for key in removals {
+        despawning_blocks.0.remove(&key);
+    }
 }
 
 /// System for updating the `Text` child element of the block each time `Number` changes
 pub fn update_block_number_text(
-    mut block_query: Query<(&Number, &Children), Changed<Number>>,
+    mut block_query: Query<(&Number, &Children, &SolidBlock), Changed<Number>>,
     mut child_query: Query<&mut Text>,
 ) {
-    for (number, children) in block_query.iter_mut() {
+    for (number, children, _) in block_query.iter_mut() {
         for child in children {
             if let Ok(mut text) = child_query.get_mut(*child) {
                 text.sections[0].value = number.0.to_string();
@@ -658,20 +684,7 @@ pub fn update_operator_text(
     for (number, children, operation, _) in block_query.iter_mut() {
         for child in children {
             if let Ok(mut text) = child_query.get_mut(*child) {
-                match operation {
-                    Operation::ADD => {
-                        text.sections[0].value = format!("+{}", number.0);
-                    }
-                    Operation::SUBTRACT => {
-                        text.sections[0].value = format!("-{}", number.0);
-                    }
-                    Operation::MULTIPLY => {
-                        text.sections[0].value = format!("x{}", number.0);
-                    }
-                    Operation::DIVIDE => {
-                        text.sections[0].value = format!("/{}", number.0);
-                    }
-                }
+                text.sections[0].value = format!("{}{}", get_operator(*operation), number.0);
             }
         }
     }
@@ -690,3 +703,25 @@ pub fn update_score_text(mut query: Query<&mut Text, With<ScoreText>>, score: Re
         text.sections[0].value = format!("{}", score.0);
     }
 }
+
+/*
+pub fn drop_floating_blocks(
+    mut query: Query<(Entity, &BlockColor, &BlockPosition, &mut Transform), With<SolidBlock>>,
+    mut block_map: ResMut<BlockMap>,
+    despawning_blocks: Res<DespawningBlocks>,
+) {
+    if despawning_blocks.0.is_empty() {
+        for (entity, color, pos, mut transform) in query.iter_mut() {
+            if block_map
+                .get_block(&Coords::new(pos.0.x, pos.0.y - 1))
+                .is_none()
+            {
+                block_map.set_block(&Coords::new(pos.0.x, pos.0.y - 1), Some((entity, *color)));
+                block_map.set_block(&Coords::new(pos.0.x, pos.0.y), None);
+                transform.translation.y -= BLOCK_SIZE;
+                block_map.debug_draw();
+            }
+        }
+    }
+}
+*/

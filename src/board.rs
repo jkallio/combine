@@ -40,12 +40,28 @@ impl BlockMap {
         None
     }
 
+    /// Set block into given position
     pub fn set_block(&mut self, pos: &Coords, value: BlockInfo) {
         if value.is_some() {
             self.0.insert(*pos, value);
         } else if self.get_block(pos).is_some() {
             self.0.remove(pos);
         }
+    }
+
+    #[allow(dead_code)]
+    pub fn debug_draw(&self) {
+        for y in (0..BOARD_SIZE.height).rev() {
+            for x in 0..BOARD_SIZE.width {
+                if self.get_block(&Coords::new(x as i32, y as i32)).is_none() {
+                    print!(". ");
+                } else {
+                    print!("X ");
+                }
+            }
+            println!("");
+        }
+        println!("--------------");
     }
 }
 

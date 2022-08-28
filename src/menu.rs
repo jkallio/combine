@@ -2,7 +2,7 @@ use crate::prelude::*;
 use bevy::prelude::*;
 use bevy::window::close_on_esc;
 
-/// Component identifier all Menu items
+/// Component identifier for all Menu items
 #[derive(Component)]
 struct MenuItems;
 

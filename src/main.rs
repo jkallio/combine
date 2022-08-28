@@ -4,15 +4,20 @@
 //! Year: 2022
 //! Author: Jussi Kallio
 //!
+//! Music by Eric Matyas
+//! www.soundimage.org
+//!
 use audio::AudioPlugin;
 use bevy::prelude::*;
 use bevy::render::camera::ScalingMode;
 use constants::prelude::*;
+use game_over::GameOverPlugin;
 use in_game::InGamePlugin;
 use menu::MenuPlugin;
 mod audio;
 mod board;
 mod constants;
+mod game_over;
 mod in_game;
 mod menu;
 
@@ -32,6 +37,7 @@ pub enum GameState {
     Init,
     Menu,
     InGame,
+    GameOver,
 }
 
 /// Resource for storing the score
@@ -59,6 +65,7 @@ fn main() {
         .add_plugin(AudioPlugin)
         .add_plugin(MenuPlugin)
         .add_plugin(InGamePlugin)
+        .add_plugin(GameOverPlugin)
         .add_startup_system(game_setup)
         .add_system_set(SystemSet::on_update(GameState::Init).with_system(launch_menu))
         .run();
