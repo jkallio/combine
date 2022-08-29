@@ -12,12 +12,14 @@ use bevy::prelude::*;
 use bevy::render::camera::ScalingMode;
 use constants::prelude::*;
 use game_over::GameOverPlugin;
-use in_game::InGamePlugin;
+use how_to_play::HowToPlayPlugin;
+use in_game::{get_translation, BlockPosition, InGamePlugin};
 use menu::MenuPlugin;
 mod audio;
 mod board;
 mod constants;
 mod game_over;
+mod how_to_play;
 mod in_game;
 mod menu;
 
@@ -25,8 +27,22 @@ mod menu;
 pub struct WindowSize(Vec2);
 
 pub mod prelude {
-    pub use super::{GameState, HighScore, Score, WindowSize};
+    pub use super::{
+        EdgeBlock, GameObject, GameState, HighScore, MenuNode, MyAssets, Score, WindowSize,
+    };
 }
+
+/// Tag for MenuItems
+#[derive(Component)]
+pub struct MenuNode;
+
+/// All game objects are tagged with this `Component` for easier clean-up
+#[derive(Component)]
+pub struct GameObject;
+
+/// Identifies edge blocks
+#[derive(Component)]
+pub struct EdgeBlock;
 
 /// Event which launches the Main Menu
 pub struct LaunchMenuEvent;
@@ -38,6 +54,21 @@ pub enum GameState {
     Menu,
     InGame,
     GameOver,
+    HowToPlay,
+}
+
+/// Block image texture and text style is preloaded in this resource
+pub struct MyAssets {
+    text_style: TextStyle,
+    block_texture: Handle<Image>,
+    edge_texture: Handle<Image>,
+    how_to_play_1_texture: Handle<Image>,
+    how_to_play_2_texture: Handle<Image>,
+}
+
+/// This `Event` is sent when edge blocks need to be spawned
+pub struct SpawnEdgeBlockEvent {
+    position: Coords,
 }
 
 /// Resource for storing the score
@@ -64,15 +95,38 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_plugin(AudioPlugin)
         .add_plugin(MenuPlugin)
+        .add_plugin(HowToPlayPlugin)
         .add_plugin(InGamePlugin)
         .add_plugin(GameOverPlugin)
         .add_startup_system(game_setup)
         .add_system_set(SystemSet::on_update(GameState::Init).with_system(launch_menu))
+        .add_system_set(SystemSet::on_update(GameState::Init).with_system(spawn_edge_block))
+        .add_event::<SpawnEdgeBlockEvent>()
         .run();
 }
 
-pub fn game_setup(mut commands: Commands, mut launch_event: EventWriter<LaunchMenuEvent>) {
+pub fn game_setup(
+    mut commands: Commands,
+    mut launch_event: EventWriter<LaunchMenuEvent>,
+    mut block_event: EventWriter<SpawnEdgeBlockEvent>,
+    asset_server: Res<AssetServer>,
+) {
     let mut camera = Camera2dBundle::default();
+
+    // Load the assets
+    let font = asset_server.load("fonts/04b_30.ttf");
+    // Insert Block Text Style as resoruce
+    commands.insert_resource(MyAssets {
+        text_style: TextStyle {
+            font: font.clone(),
+            font_size: 24.0,
+            color: Color::BLACK,
+        },
+        block_texture: asset_server.load("pixel-block.png"),
+        edge_texture: asset_server.load("edge-block.png"),
+        how_to_play_1_texture: asset_server.load("how-to-play1.png"),
+        how_to_play_2_texture: asset_server.load("how-to-play2.png"),
+    });
 
     // No re-scaling on windows resize
     camera.projection.scaling_mode = ScalingMode::None;
@@ -87,6 +141,18 @@ pub fn game_setup(mut commands: Commands, mut launch_event: EventWriter<LaunchMe
     // Spawn the camera
     commands.spawn_bundle(camera);
 
+    // Initialize the game area (edges)
+    for y in -1..=BOARD_SIZE.height as i32 {
+        for x in -1..=BOARD_SIZE.width as i32 {
+            if y < 0 || y >= BOARD_SIZE.height as i32 || x < 0 || x >= BOARD_SIZE.width as i32 {
+                let coords = Coords::new(x, y);
+                block_event.send(SpawnEdgeBlockEvent {
+                    position: coords.clone(),
+                });
+            }
+        }
+    }
+
     launch_event.send(LaunchMenuEvent);
 }
 
@@ -98,5 +164,25 @@ fn launch_menu(
         game_state
             .set(GameState::Menu)
             .expect("Failed to set GameState::Menu");
+    }
+}
+
+/// System for spawning edge blocks
+fn spawn_edge_block(
+    mut commands: Commands,
+    mut event_reader: EventReader<SpawnEdgeBlockEvent>,
+    win_size: Res<WindowSize>,
+    my_assets: Res<MyAssets>,
+) {
+    for ev in event_reader.iter() {
+        let _ = commands
+            .spawn_bundle(SpriteBundle {
+                texture: my_assets.edge_texture.clone(),
+                transform: Transform::from_translation(get_translation(&win_size.0, &ev.position)),
+                ..default()
+            })
+            .insert(EdgeBlock)
+            .insert(BlockPosition(ev.position))
+            .id();
     }
 }

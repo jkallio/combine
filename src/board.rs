@@ -77,16 +77,24 @@ impl Plugin for BoardPlugin {
         app.add_system_set(SystemSet::on_enter(GameState::InGame).with_system(on_enter))
             .add_system_set(SystemSet::on_exit(GameState::InGame).with_system(on_exit))
             .add_system_set(
-                SystemSet::on_update(GameState::InGame).with_system(handle_block_dropped),
+                SystemSet::on_update(GameState::InGame)
+                    .with_system(handle_block_dropped)
+                    .with_system(handle_moved_block),
             )
-            .add_system_set(SystemSet::on_update(GameState::InGame).with_system(handle_moved_block))
             .insert_resource(BlockMap::new_empty())
             .add_event::<MoveBlockEvent>();
     }
 }
 
-fn on_enter(mut block_map: ResMut<BlockMap>) {
+fn on_enter(
+    mut block_map: ResMut<BlockMap>,
+    query: Query<(Entity, &BlockPosition), With<EdgeBlock>>,
+) {
     block_map.0.clear();
+
+    for (entity, pos) in query.iter() {
+        block_map.0.insert(pos.0, Some((entity, BlockColor::NONE)));
+    }
 }
 
 fn on_exit(mut block_map: ResMut<BlockMap>) {

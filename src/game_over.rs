@@ -1,4 +1,4 @@
-use crate::in_game::{GameObject, HudLayer};
+use crate::in_game::HudLayer;
 use crate::prelude::*;
 use bevy::prelude::*;
 
@@ -45,10 +45,10 @@ fn on_enter(
 
     if let Ok((hud, mut color)) = query.get_single_mut() {
         *color = UiColor(Color::Rgba {
-            red: 1.0,
-            green: 1.0,
-            blue: 1.0,
-            alpha: 0.6,
+            red: 0.0,
+            green: 0.0,
+            blue: 0.0,
+            alpha: 0.95,
         });
 
         let text = commands
@@ -58,7 +58,7 @@ fn on_enter(
                     TextStyle {
                         font: asset_server.load("fonts/04b_30.ttf"),
                         font_size: 28.0,
-                        color: Color::BLACK,
+                        color: Color::WHITE,
                     },
                 )
                 .with_text_alignment(TextAlignment::CENTER)

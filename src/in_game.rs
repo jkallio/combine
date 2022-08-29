@@ -16,11 +16,6 @@ pub enum Operation {
     DIVIDE,
 }
 
-/// This `Event` is sent when edge blocks need to be spawned
-pub struct SpawnEdgeBlockEvent {
-    position: Coords,
-}
-
 /// This `Event` is sent when new solid block needs to be spawned
 pub struct SpawnDroppingBlockEvent {
     number: i32,
@@ -62,13 +57,6 @@ struct DropTimer(Timer);
 /// `Timer` for restricting horizontal movement
 struct MoveTimer(Stopwatch);
 
-/// Block image texture and text style is preloaded in this resource
-struct BlockStyle {
-    text_style: TextStyle,
-    block: Handle<Image>,
-    edge: Handle<Image>,
-}
-
 /// This resource holds the current block drop speed (in seconds)
 struct DropSpeed(pub f32);
 
@@ -86,10 +74,6 @@ pub struct HudLayer;
 /// Identifier for the ScoreText
 #[derive(Component)]
 pub struct ScoreText;
-
-/// All game objects are tagged with this `Component` for easier clean-up
-#[derive(Component)]
-pub struct GameObject;
 
 /// Dropping block is tagged with this `Component`
 #[derive(Component)]
@@ -160,44 +144,23 @@ impl Plugin for InGamePlugin {
             .add_system_set(SystemSet::on_enter(GameState::InGame).with_system(on_enter))
             .add_system_set(SystemSet::on_exit(GameState::InGame).with_system(on_exit))
             .add_system_set(
-                SystemSet::on_update(GameState::InGame).with_system(back_to_menu_on_esc),
+                SystemSet::on_update(GameState::InGame)
+                    .with_system(back_to_menu_on_esc)
+                    .with_system(handle_dropping_block_movement)
+                    .with_system(update_block_translation)
+                    .with_system(spawn_solid_block)
+                    .with_system(spawn_dropping_block)
+                    .with_system(randomize_new_block)
+                    .with_system(perform_calculation)
+                    .with_system(update_block_number)
+                    .with_system(update_block_number_text)
+                    .with_system(update_score_text)
+                    .with_system(update_operator_text)
+                    .with_system(update_block_color)
+                    .with_system(despawn_blocks)
+                    .with_system(switch_dropping_block_color)
+                    .with_system(drop_floating_blocks),
             )
-            .add_system_set(
-                SystemSet::on_update(GameState::InGame).with_system(handle_dropping_block_movement),
-            )
-            .add_system_set(
-                SystemSet::on_update(GameState::InGame).with_system(update_block_translation),
-            )
-            .add_system_set(SystemSet::on_update(GameState::InGame).with_system(spawn_edge_block))
-            .add_system_set(SystemSet::on_update(GameState::InGame).with_system(spawn_solid_block))
-            .add_system_set(
-                SystemSet::on_update(GameState::InGame).with_system(spawn_dropping_block),
-            )
-            .add_system_set(
-                SystemSet::on_update(GameState::InGame).with_system(randomize_new_block),
-            )
-            .add_system_set(
-                SystemSet::on_update(GameState::InGame).with_system(perform_calculation),
-            )
-            .add_system_set(
-                SystemSet::on_update(GameState::InGame).with_system(update_block_number),
-            )
-            .add_system_set(
-                SystemSet::on_update(GameState::InGame).with_system(update_block_number_text),
-            )
-            .add_system_set(SystemSet::on_update(GameState::InGame).with_system(update_score_text))
-            .add_system_set(
-                SystemSet::on_update(GameState::InGame).with_system(update_operator_text),
-            )
-            .add_system_set(SystemSet::on_update(GameState::InGame).with_system(update_block_color))
-            .add_system_set(SystemSet::on_update(GameState::InGame).with_system(despawn_blocks))
-            .add_system_set(
-                SystemSet::on_update(GameState::InGame).with_system(switch_dropping_block_color),
-            )
-            .add_system_set(
-                SystemSet::on_update(GameState::InGame).with_system(drop_floating_blocks),
-            )
-            .add_event::<SpawnEdgeBlockEvent>()
             .add_event::<SpawnSolidBlockEvent>()
             .add_event::<SpawnDroppingBlockEvent>()
             .add_event::<RandomizeDroppingBlockEvent>()
@@ -214,40 +177,11 @@ impl Plugin for InGamePlugin {
 fn on_enter(
     mut commands: Commands,
     mut gen_event: EventWriter<RandomizeDroppingBlockEvent>,
-    mut block_event: EventWriter<SpawnEdgeBlockEvent>,
     asset_server: Res<AssetServer>,
     mut score: ResMut<Score>,
     mut drop_speed: ResMut<DropSpeed>,
 ) {
     println!("Enter GameState::InGame");
-
-    // Initialize the game area (edges)
-    for y in -2..=BOARD_SIZE.height as i32 + 1 {
-        for x in -2..=BOARD_SIZE.width as i32 + 1 {
-            if y < 0 || y >= BOARD_SIZE.height as i32 || x < 0 || x >= BOARD_SIZE.width as i32 {
-                let coords = Coords::new(x, y);
-                block_event.send(SpawnEdgeBlockEvent {
-                    position: coords.clone(),
-                });
-            }
-        }
-    }
-
-    // Load the assets
-    let font = asset_server.load("fonts/04b_30.ttf");
-    let block = asset_server.load("pixel-block.png");
-    let edge = asset_server.load("edge-block.png");
-
-    // Insert Block Text Style as resoruce
-    commands.insert_resource(BlockStyle {
-        text_style: TextStyle {
-            font: font.clone(),
-            font_size: 24.0,
-            color: Color::BLACK,
-        },
-        block,
-        edge,
-    });
 
     // Spawn score text
     let hud = commands
@@ -347,34 +281,11 @@ fn randomize_new_block(
     }
 }
 
-/// System for spawning edge blocks
-fn spawn_edge_block(
-    mut commands: Commands,
-    mut event_reader: EventReader<SpawnEdgeBlockEvent>,
-    win_size: Res<WindowSize>,
-    block_style: Res<BlockStyle>,
-    mut block_map: ResMut<BlockMap>,
-) {
-    for ev in event_reader.iter() {
-        let entity = commands
-            .spawn_bundle(SpriteBundle {
-                texture: block_style.edge.clone(),
-                transform: Transform::from_translation(get_translation(&win_size.0, &ev.position)),
-                ..default()
-            })
-            .insert(GameObject)
-            .insert(EdgeBlock)
-            .id();
-
-        block_map.set_block(&ev.position, Some((entity, BlockColor::NONE)));
-    }
-}
-
 /// System for spawning solid blocks
 fn spawn_solid_block(
     mut commands: Commands,
     mut event_reader: EventReader<SpawnSolidBlockEvent>,
-    block_style: Res<BlockStyle>,
+    block_style: Res<MyAssets>,
 ) {
     for ev in event_reader.iter() {
         let block = commands
@@ -383,7 +294,7 @@ fn spawn_solid_block(
                     color: get_color(ev.color),
                     ..default()
                 },
-                texture: block_style.block.clone(),
+                texture: block_style.block_texture.clone(),
                 transform: INITIAL_TRANSFORM,
                 ..default()
             })
@@ -411,7 +322,7 @@ fn spawn_solid_block(
 fn spawn_dropping_block(
     mut commands: Commands,
     mut event_reader: EventReader<SpawnDroppingBlockEvent>,
-    block_style: Res<BlockStyle>,
+    my_assets: Res<MyAssets>,
 ) {
     for ev in event_reader.iter() {
         let block = commands
@@ -420,7 +331,7 @@ fn spawn_dropping_block(
                     color: get_color(ev.color),
                     ..default()
                 },
-                texture: block_style.block.clone(),
+                texture: my_assets.block_texture.clone(),
                 transform: INITIAL_TRANSFORM,
                 ..default()
             })
@@ -436,7 +347,7 @@ fn spawn_dropping_block(
             .spawn_bundle(Text2dBundle {
                 text: Text::from_section(
                     format!("{}{}", get_operator(ev.operation), ev.number),
-                    block_style.text_style.clone(),
+                    my_assets.text_style.clone(),
                 )
                 .with_alignment(TextAlignment::CENTER),
                 transform: Transform::from_xyz(0.0, 0.0, 10.0),
@@ -577,8 +488,7 @@ pub fn perform_calculation(
                     } else if number.0 < 0 {
                         (number.0 as f32 / ev.number as f32).floor() as i32
                     } else {
-                        // TODO: Division by zero
-                        panic!("Divison by zero!");
+                        0
                     }
                 }
             }

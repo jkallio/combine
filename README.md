@@ -24,7 +24,7 @@ You will get points based on the value the block had before it breaks. As the ma
 - M: Mute background music
 
 ### Source Code ###
-The code is open source as requested in Bevy Jam rules. However, if you're here to learn about Bevy, keep in mind that I'm a total n00b in Rust and Bevy, and also this code is written in just a few days :)
+The code is open source as requested in Bevy Jam rules. However, if you're here to learn about Bevy, keep in mind that this code is written in just a few days :)
 
 ### License ###
 Check the LICENSE file

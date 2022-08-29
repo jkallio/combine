@@ -2,10 +2,6 @@ use crate::prelude::*;
 use bevy::prelude::*;
 use bevy::window::close_on_esc;
 
-/// Component identifier for all Menu items
-#[derive(Component)]
-struct MenuItems;
-
 /// Identifier for the Press Start
 #[derive(Component)]
 struct PressStartText;
@@ -39,7 +35,7 @@ fn on_enter(mut commands: Commands, asset_server: Res<AssetServer>) {
             color: UiColor(Color::NONE),
             ..default()
         })
-        .insert(MenuItems)
+        .insert(MenuNode)
         .id();
 
     // Press Start text
@@ -87,7 +83,7 @@ fn on_enter(mut commands: Commands, asset_server: Res<AssetServer>) {
 }
 
 /// Called once when switching from `GameState::Menu`
-fn on_exit(mut commands: Commands, query: Query<Entity, With<MenuItems>>) {
+fn on_exit(mut commands: Commands, query: Query<Entity, With<MenuNode>>) {
     println!("Exit GameState::Menu");
 
     for entity in query.iter() {
@@ -102,7 +98,7 @@ fn start_game_on_enter(
 ) {
     if input.just_pressed(KeyCode::Return) {
         game_state
-            .set(GameState::InGame)
+            .set(GameState::HowToPlay)
             .expect("Failed to change GameState:InGame");
         input.reset(KeyCode::Return);
     }
